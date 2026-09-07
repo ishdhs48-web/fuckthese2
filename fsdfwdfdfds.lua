@@ -1924,15 +1924,15 @@ function UIController:CreateDumpAllTab()
 
     self.Paragraphs.DumpAllStatus = tab:AddParagraph({
         Title = "Bulk Decompiler",
-        Content = "Target folder: Dumper/\n(On my iPhone/Delta/Delta/Workspace/Dumper/)"
+        Content = "Target folder: Delta/Workspace/Dumper/\n(Files stored on mobile/iOS directory)"
     })
 
     tab:AddButton({
         Title = "Decompile All Scripts & Save",
-        Description = "Decompiles all scanned scripts and writes them to the Dumper folder",
+        Description = "Safely dumps all scripts to Delta Workspace Dumper folder",
         Callback = function()
             if not writefile or not makefolder then
-                Fluent:Notify({Title = "Error", Content = "File system API (writefile/makefolder) not supported by executor!", Duration = 3})
+                Fluent:Notify({Title = "Error", Content = "File system API (writefile/makefolder) not supported!", Duration = 3})
                 return
             end
 
@@ -1941,9 +1941,12 @@ function UIController:CreateDumpAllTab()
                 return
             end
 
+            local targetDir = "Delta/Workspace/Dumper"
             pcall(function()
-                if not isfolder("Dumper") then
-                    makefolder("Dumper")
+                if isfolder and not isfolder(targetDir) then
+                    makefolder("Delta")
+                    makefolder("Delta/Workspace")
+                    makefolder("Delta/Workspace/Dumper")
                 end
             end)
 
@@ -1952,20 +1955,20 @@ function UIController:CreateDumpAllTab()
                 local successCount = 0
                 local failCount = 0
 
-                Fluent:Notify({Title = "Dumper Started", Content = "Decompiling " .. tostring(total) .. " scripts...", Duration = 3})
+                Fluent:Notify({Title = "Dumper Started", Content = "Decompiling " .. tostring(total) .. " scripts safely...", Duration = 3})
 
                 for i, scriptData in ipairs(self.Analyzer.Scripts) do
-                    self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nDecompiling: " .. scriptData.Name)
+                    self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nDecompiling: " .. tostring(scriptData.Name))
 
-                    if scriptData.Instance then
-                        local safeName = scriptData.Name:gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
-                        local filePath = "Dumper/" .. safeName
+                    if scriptData and scriptData.Instance then
+                        local safeName = tostring(scriptData.Name):gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
+                        local filePath = targetDir .. "/" .. safeName
 
                         local ok, code = pcall(function()
                             return self.Analyzer:DecompileScript(scriptData.Instance)
                         end)
 
-                        if ok and code then
+                        if ok and code and type(code) == "string" and #code > 0 then
                             local written, err = pcall(function()
                                 writefile(filePath, code)
                             end)
@@ -1973,7 +1976,12 @@ function UIController:CreateDumpAllTab()
                             if written then
                                 successCount = successCount + 1
                             else
-                                failCount = failCount + 1
+                                -- Fallback save directly to root dumper folder if path resolution fails
+                                pcall(function()
+                                    if not isfolder("Dumper") then makefolder("Dumper") end
+                                    writefile("Dumper/" .. safeName, code)
+                                    successCount = successCount + 1
+                                end)
                             end
                         else
                             failCount = failCount + 1
@@ -1982,17 +1990,17 @@ function UIController:CreateDumpAllTab()
                         failCount = failCount + 1
                     end
 
-                    -- Задержка предотвращает краш и перегрузку CPU
-                    task.wait(0.1)
+                    -- Увеличенная задержка предотвращает краш движка (Crash Protection)
+                    task.wait(0.2)
 
-                    -- Очистка GC каждые 10 файлов от вылета по памяти
-                    if i % 10 == 0 then
-                        collectgarbage("collect")
+                    -- Очистка GC для освобождения оперативной памяти
+                    if i % 5 == 0 then
+                        collectgarbage("step", 100)
                     end
                 end
 
-                self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: Dumper/")
-                Fluent:Notify({Title = "Dump Complete!", Content = "Saved " .. tostring(successCount) .. " scripts to Dumper/", Duration = 5})
+                self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: " .. targetDir)
+                Fluent:Notify({Title = "Dump Complete!", Content = "Saved " .. tostring(successCount) .. " scripts to " .. targetDir, Duration = 5})
             end)
         end
     })
