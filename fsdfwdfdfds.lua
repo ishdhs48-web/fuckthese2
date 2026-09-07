@@ -1958,16 +1958,23 @@ function UIController:CreateDumpAllTab()
                     self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nDecompiling: " .. scriptData.Name)
 
                     if scriptData.Instance then
-                        local code = self.Analyzer:DecompileScript(scriptData.Instance)
                         local safeName = scriptData.Name:gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
                         local filePath = "Dumper/" .. safeName
 
-                        local written, err = pcall(function()
-                            writefile(filePath, code)
+                        local ok, code = pcall(function()
+                            return self.Analyzer:DecompileScript(scriptData.Instance)
                         end)
 
-                        if written then
-                            successCount = successCount + 1
+                        if ok and code then
+                            local written, err = pcall(function()
+                                writefile(filePath, code)
+                            end)
+
+                            if written then
+                                successCount = successCount + 1
+                            else
+                                failCount = failCount + 1
+                            end
                         else
                             failCount = failCount + 1
                         end
@@ -1975,7 +1982,13 @@ function UIController:CreateDumpAllTab()
                         failCount = failCount + 1
                     end
 
-                    task.wait()
+                    -- Задержка предотвращает краш и перегрузку CPU
+                    task.wait(0.1)
+
+                    -- Очистка GC каждые 10 файлов от вылета по памяти
+                    if i % 10 == 0 then
+                        collectgarbage("collect")
+                    end
                 end
 
                 self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: Dumper/")
@@ -2659,17 +2672,11 @@ function UIController:HookSelectedFunction()
     end
     
     local success, err = self.Analyzer:HookFunctionToNil(self.CurrentFunction.Func)
-    
     if success then
         self.CurrentFunction.IsHooked = true
-        self.Paragraphs.FunctionInfo:SetDesc(
-            "Name: " .. tostring(self.CurrentFunction.Name) .. " [HOOKED]" ..
-            "\nLine: " .. tostring(self.CurrentFunction.Line) ..
-            "\nSource: " .. Utils.TruncateText(tostring(self.CurrentFunction.Source), 40)
-        )
-        Fluent:Notify({Title = "Success", Content = "Function hooked (yield)", Duration = 2})
+        Fluent:Notify({Title = "Success", Content = "Function hooked", Duration = 2})
     else
-        Fluent:Notify({Title = "Error", Content = err or "Hook failed", Duration = 2})
+        Fluent:Notify({Title = "Error", Content = err or "Failed to hook", Duration = 2})
     end
 end
 
@@ -2680,17 +2687,11 @@ function UIController:RestoreSelectedFunction()
     end
     
     local success, err = self.Analyzer:RestoreFunction(self.CurrentFunction.Func)
-    
     if success then
         self.CurrentFunction.IsHooked = false
-        self.Paragraphs.FunctionInfo:SetDesc(
-            "Name: " .. tostring(self.CurrentFunction.Name) ..
-            "\nLine: " .. tostring(self.CurrentFunction.Line) ..
-            "\nSource: " .. Utils.TruncateText(tostring(self.CurrentFunction.Source), 40)
-        )
         Fluent:Notify({Title = "Success", Content = "Function restored", Duration = 2})
     else
-        Fluent:Notify({Title = "Error", Content = err or "Restore failed", Duration = 2})
+        Fluent:Notify({Title = "Error", Content = err or "Failed to restore", Duration = 2})
     end
 end
 
@@ -2701,48 +2702,31 @@ function UIController:HookSelectedProto()
     end
     
     local success, err = self.Analyzer:HookFunctionToNil(self.CurrentProto.Func)
-    
     if success then
-        Fluent:Notify({Title = "Success", Content = "Proto hooked (yield)", Duration = 2})
+        Fluent:Notify({Title = "Success", Content = "Proto hooked", Duration = 2})
     else
-        Fluent:Notify({Title = "Error", Content = err or "Hook failed", Duration = 2})
+        Fluent:Notify({Title = "Error", Content = err or "Failed to hook proto", Duration = 2})
     end
 end
 
 function UIController:DecompileScript()
-    if not self.CurrentScript then
-        Fluent:Notify({Title = "Error", Content = "No script selected", Duration = 2})
+    if not self.CurrentScript or not self.CurrentScript.Instance then
+        Fluent:Notify({Title = "Error", Content = "Select a valid script first", Duration = 2})
         return
     end
     
-    if not self.CurrentScript.Instance then
-        Fluent:Notify({Title = "Error", Content = "Cannot decompile deleted script instance", Duration = 2})
-        return
-    end
-    
-    Fluent:Notify({Title = "Decompiling", Content = "Decompiling " .. self.CurrentScript.Name .. "...", Duration = 2})
+    Fluent:Notify({Title = "Decompiling", Content = "Decompiling script...", Duration = 2})
     
     task.spawn(function()
-        local source = self.Analyzer:DecompileScript(self.CurrentScript.Instance)
-        self.DecompiledSource = source
-        
-        local lineCount = #string.split(source, "\n")
-        local charCount = #source
-        
-        self.Paragraphs.DecompileStatus:SetDesc(
-            "Script: " .. self.CurrentScript.Name ..
-            "\nLines: " .. tostring(lineCount) ..
-            "\nCharacters: " .. tostring(charCount) ..
-            "\nStatus: Success"
-        )
-        
-        Fluent:Notify({Title = "Complete", Content = "Decompiled " .. tostring(lineCount) .. " lines", Duration = 2})
+        self.DecompiledSource = self.Analyzer:DecompileScript(self.CurrentScript.Instance)
+        self.Paragraphs.DecompileStatus:SetDesc("Decompiled successfully. Size: " .. tostring(#self.DecompiledSource) .. " chars")
+        Fluent:Notify({Title = "Success", Content = "Script decompiled", Duration = 2})
     end)
 end
 
 function UIController:CopySource()
     if self.DecompiledSource == "" then
-        Fluent:Notify({Title = "Error", Content = "No decompiled code to copy", Duration = 2})
+        Fluent:Notify({Title = "Error", Content = "No decompiled source available", Duration = 2})
         return
     end
     
@@ -2756,46 +2740,28 @@ end
 
 function UIController:SaveSource()
     if self.DecompiledSource == "" then
-        Fluent:Notify({Title = "Error", Content = "No decompiled code to save", Duration = 2})
+        Fluent:Notify({Title = "Error", Content = "No decompiled source available", Duration = 2})
         return
     end
     
-    if not writefile then
-        Fluent:Notify({Title = "Error", Content = "writefile not supported", Duration = 2})
-        return
-    end
-    
-    local fileName = (self.CurrentScript and self.CurrentScript.Name or "decompiled") .. ".lua"
-    
-    SafeCall(function()
+    if writefile then
+        local fileName = (self.CurrentScript and self.CurrentScript.Name or "decompiled") .. ".lua"
         writefile(fileName, self.DecompiledSource)
-    end)
-    
-    Fluent:Notify({Title = "Success", Content = "Saved as " .. fileName, Duration = 2})
+        Fluent:Notify({Title = "Success", Content = "Saved as " .. fileName, Duration = 2})
+    else
+        Fluent:Notify({Title = "Error", Content = "writefile not supported", Duration = 2})
+    end
 end
 
 function UIController:RefreshScripts()
-    Fluent:Notify({Title = "Scanning", Content = "Rescanning scripts...", Duration = 2})
-    
-    task.spawn(function()
-        self.Analyzer:ScanAllScripts()
-        self.Dropdowns.Script:SetValues(self.Analyzer:GetScriptList())
-        
-        self.CurrentScript = nil
-        self.CurrentFunction = nil
-        self.CurrentProto = nil
-        
-        self.Paragraphs.ScriptInfo:SetDesc("No script selected")
-        self.Dropdowns.Function:SetValues({"No script selected"})
-        
-        Fluent:Notify({Title = "Complete", Content = "Found " .. tostring(#self.Analyzer.Scripts) .. " scripts", Duration = 2})
-    end)
+    self.Analyzer:ScanAllScripts()
+    self.Dropdowns.Script:SetValues(self.Analyzer:GetScriptList())
+    Fluent:Notify({Title = "Refreshed", Content = "Found " .. tostring(#self.Analyzer.Scripts) .. " scripts", Duration = 2})
 end
 
 function UIController:RefreshAll()
     self:RefreshScripts()
-    self.Analyzer:ClearCache()
-    Serializer.ClearCache()
+    self:ClearSelection()
 end
 
 function UIController:ClearSelection()
@@ -2808,25 +2774,25 @@ function UIController:ClearSelection()
     self.SelectedProtoUpvalueIndex = nil
     self.SelectedStackLevel = nil
     self.SelectedStackIndex = nil
+    self.DecompiledSource = ""
+    
+    self.Dropdowns.Function:SetValues({"No script selected"})
+    self.Dropdowns.Constant:SetValues({"No function selected"})
+    self.Dropdowns.Upvalue:SetValues({"No function selected"})
+    self.Dropdowns.Proto:SetValues({"No function selected"})
+    self.Dropdowns.ProtoConstant:SetValues({"No proto selected"})
+    self.Dropdowns.ProtoUpvalue:SetValues({"No proto selected"})
+    self.Dropdowns.Stack:SetValues({"No stack data"})
     
     self.Paragraphs.ScriptInfo:SetDesc("No script selected")
     self.Paragraphs.FunctionInfo:SetDesc("No function selected")
     self.Paragraphs.ConstantInfo:SetDesc("Select a constant")
     self.Paragraphs.UpvalueInfo:SetDesc("Select an upvalue")
-    self.Paragraphs.StackInfo:SetDesc("Select a stack variable")
     self.Paragraphs.ProtoInfo:SetDesc("Select a proto")
-    
-    self.Dropdowns.Function:SetValues({"No script selected"})
-    self.Dropdowns.Constant:SetValues({"No function selected"})
-    self.Dropdowns.Upvalue:SetValues({"No function selected"})
-    self.Dropdowns.Stack:SetValues({"No stack data"})
-    self.Dropdowns.Proto:SetValues({"No function selected"})
-    self.Dropdowns.ProtoConstant:SetValues({"No proto selected"})
-    self.Dropdowns.ProtoUpvalue:SetValues({"No proto selected"})
-    
-    Fluent:Notify({Title = "Cleared", Content = "All selections cleared", Duration = 2})
+    self.Paragraphs.StackInfo:SetDesc("Select a stack variable")
+    self.Paragraphs.DecompileStatus:SetDesc("No script decompiled")
 end
 
 local analyzer = ScriptAnalyzer.new()
-local ui = UIController.new(analyzer)
-ui:Initialize()
+local controller = UIController.new(analyzer)
+controller:Initialize()
