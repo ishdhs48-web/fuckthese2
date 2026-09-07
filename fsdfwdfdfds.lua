@@ -1924,7 +1924,7 @@ function UIController:CreateDumpAllTab()
 
     self.Paragraphs.DumpAllStatus = tab:AddParagraph({
         Title = "Bulk Decompiler",
-        Content = "Target folder: Delta/Workspace/Dumper/\n(Files stored on mobile/iOS directory)"
+        Content = "Target folder: Delta/Workspace/Dumper/\nCheck F9 console for detailed logs."
     })
 
     tab:AddButton({
@@ -1955,50 +1955,72 @@ function UIController:CreateDumpAllTab()
                 local successCount = 0
                 local failCount = 0
 
+                print("[ScriptDumper Log] Initializing dump operation. Total scripts: " .. tostring(total))
                 Fluent:Notify({Title = "Dumper Started", Content = "Decompiling " .. tostring(total) .. " scripts safely...", Duration = 3})
 
                 for i, scriptData in ipairs(self.Analyzer.Scripts) do
-                    -- Обновляем текст только каждый скрипт, обрезая длинные имена во избежание сбоев в UI
-                    local currentName = Utils.TruncateText(tostring(scriptData.Name or "Unknown"), 30)
+                    local currentName = tostring(scriptData.Name or "Unknown")
+                    local truncatedName = Utils.TruncateText(currentName, 30)
+
+                    print(string.format("[ScriptDumper Log] [%d/%d] Processing: %s (Type: %s)", i, total, currentName, tostring(scriptData.Type)))
+
                     pcall(function()
-                        self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nProcessing: " .. currentName)
+                        self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nProcessing: " .. truncatedName)
                     end)
 
                     if scriptData and scriptData.Instance then
-                        local safeName = tostring(scriptData.Name):gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
+                        local safeName = currentName:gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
                         local filePath = targetDir .. "/" .. safeName
 
-                        local ok, code = pcall(function()
-                            return self.Analyzer:DecompileScript(scriptData.Instance)
+                        local ok, code = false, ""
+                        local decompileThread = task.spawn(function()
+                            ok, code = pcall(function()
+                                return self.Analyzer:DecompileScript(scriptData.Instance)
+                            end)
                         end)
 
-                        if ok and code and type(code) == "string" and #code > 0 then
-                            local written, err = pcall(function()
+                        -- Ждем результат декомпиляции с гарантированной передачей потока
+                        task.wait(0.05)
+
+                        if ok and code and type(code) == "string" and #code > 0 and not string.find(code, "Decompilation failed") then
+                            local written = pcall(function()
                                 writefile(filePath, code)
                             end)
 
                             if written then
                                 successCount = successCount + 1
+                                print(string.format("[ScriptDumper Log] [%d/%d] SUCCESS -> Saved to %s (%d chars)", i, total, filePath, #code))
                             else
-                                pcall(function()
+                                local backupWritten = pcall(function()
                                     if not isfolder("Dumper") then makefolder("Dumper") end
                                     writefile("Dumper/" .. safeName, code)
-                                    successCount = successCount + 1
                                 end)
+
+                                if backupWritten then
+                                    successCount = successCount + 1
+                                    print(string.format("[ScriptDumper Log] [%d/%d] SUCCESS (Backup Dir) -> Dumper/%s", i, total, safeName))
+                                else
+                                    failCount = failCount + 1
+                                    warn(string.format("[ScriptDumper Log] [%d/%d] ERROR -> Failed to write file: %s", i, total, safeName))
+                                end
                             end
                         else
                             failCount = failCount + 1
+                            warn(string.format("[ScriptDumper Log] [%d/%d] FAILED -> Decompilation failed or returned empty string for: %s", i, total, currentName))
                         end
                     else
                         failCount = failCount + 1
+                        warn(string.format("[ScriptDumper Log] [%d/%d] SKIPPED -> Invalid instance or deleted script: %s", i, total, currentName))
                     end
 
-                    task.wait(0.1)
-
-                    if i % 5 == 0 then
+                    -- Обязательная отдача управления и чистка каждые 3 скрипта
+                    task.wait(0.05)
+                    if i % 3 == 0 then
                         collectgarbage("step", 100)
                     end
                 end
+
+                print(string.format("[ScriptDumper Log] FINISHED! Success: %d, Fail/Skipped: %d", successCount, failCount))
 
                 pcall(function()
                     self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: " .. targetDir)
