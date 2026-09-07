@@ -158,38 +158,6 @@ function CodeViewerWindow:Create()
     stroke.Thickness = 1
     stroke.Parent = mainFrame
     
-    local function getAssetFromId(assetId, fileName)
-        if isfile and isfile(fileName) then
-            return getcustomasset(fileName)
-        end
-        
-        local success, data = pcall(function()
-            return game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id=" .. tostring(assetId))
-        end)
-        
-        if success and data and writefile then
-            writefile(fileName, data)
-            return getcustomasset(fileName)
-        end
-        
-        return "rbxassetid://" .. tostring(assetId)
-    end
-
-    local shadowAsset = getAssetFromId(5554236805, "shadow.png")
-
-    local shadow = Instance.new("ImageLabel")
-    shadow.Name = "Shadow"
-    shadow.BackgroundTransparency = 1
-    shadow.Position = UDim2.new(0, -15, 0, -15)
-    shadow.Size = UDim2.new(1, 30, 1, 30)
-    shadow.ZIndex = -1
-    shadow.Image = shadowAsset
-    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.ImageTransparency = 0.5
-    shadow.ScaleType = Enum.ScaleType.Slice
-    shadow.SliceCenter = Rect.new(23, 23, 277, 277)
-    shadow.Parent = mainFrame
-    
     local titleBar = Instance.new("Frame")
     titleBar.Name = "TitleBar"
     titleBar.Size = UDim2.new(1, 0, 0, 35)
@@ -543,76 +511,54 @@ function CodeViewerWindow:GenerateAnnotatedSource(source: string, functions: {Fu
         table.insert(header, "     |   Line: " .. tostring(func.Line))
         
         local constCount = 0
-        for _ in pairs(func.Constants) do constCount = constCount + 1 end
+        if func.Constants then for _ in pairs(func.Constants) do constCount = constCount + 1 end end
         local upvalCount = 0
-        for _ in pairs(func.Upvalues) do upvalCount = upvalCount + 1 end
+        if func.Upvalues then for _ in pairs(func.Upvalues) do upvalCount = upvalCount + 1 end end
         
         table.insert(header, "     |")
         table.insert(header, "     |   @CONSTANTS (" .. tostring(constCount) .. "):")
-        for idx, val in pairs(func.Constants) do
-            local valStr = tostring(val)
-            if type(val) == "string" then
-                valStr = '"' .. string.sub(val, 1, 50) .. (string.len(val) > 50 and '..."' or '"')
+        if func.Constants then
+            for idx, val in pairs(func.Constants) do
+                local valStr = tostring(val)
+                if type(val) == "string" then
+                    valStr = '"' .. string.sub(val, 1, 50) .. (string.len(val) > 50 and '..."' or '"')
+                end
+                table.insert(header, "     |     [" .. tostring(idx) .. "] = " .. valStr .. " (" .. typeof(val) .. ")")
             end
-            table.insert(header, "     |     [" .. tostring(idx) .. "] = " .. valStr .. " (" .. typeof(val) .. ")")
         end
         
         table.insert(header, "     |")
         table.insert(header, "     |   @UPVALUES (" .. tostring(upvalCount) .. "):")
-        for idx, val in pairs(func.Upvalues) do
-            local valStr = tostring(val)
-            if type(val) == "string" then
-                valStr = '"' .. string.sub(val, 1, 50) .. (string.len(val) > 50 and '..."' or '"')
-            elseif type(val) == "function" then
-                local info = ""
-                SafeCall(function()
-                    local src, name, line = debug.info(val, "sln")
-                    info = (name or "anonymous") .. "@" .. tostring(line or "?")
-                end)
-                valStr = "(function: " .. info .. ")"
-            elseif type(val) == "table" then
-                local count = 0
-                for _ in pairs(val) do count = count + 1 end
-                valStr = "(table[" .. tostring(count) .. "])"
+        if func.Upvalues then
+            for idx, val in pairs(func.Upvalues) do
+                local valStr = tostring(val)
+                if type(val) == "string" then
+                    valStr = '"' .. string.sub(val, 1, 50) .. (string.len(val) > 50 and '..."' or '"')
+                elseif type(val) == "function" then
+                    local info = ""
+                    SafeCall(function()
+                        local src, name, line = debug.info(val, "sln")
+                        info = (name or "anonymous") .. "@" .. tostring(line or "?")
+                    end)
+                    valStr = "(function: " .. info .. ")"
+                elseif type(val) == "table" then
+                    local count = 0
+                    for _ in pairs(val) do count = count + 1 end
+                    valStr = "(table[" .. tostring(count) .. "])"
+                end
+                table.insert(header, "     |     [" .. tostring(idx) .. "] = " .. valStr .. " (" .. typeof(val) .. ")")
             end
-            table.insert(header, "     |     [" .. tostring(idx) .. "] = " .. valStr .. " (" .. typeof(val) .. ")")
         end
         
-        if #func.Protos > 0 then
+        if func.Protos and #func.Protos > 0 then
             table.insert(header, "     |")
             table.insert(header, "     |   @PROTOS (" .. tostring(#func.Protos) .. "):")
             for i, proto in ipairs(func.Protos) do
                 local pConstCount = 0
-                for _ in pairs(proto.Constants) do pConstCount = pConstCount + 1 end
+                if proto.Constants then for _ in pairs(proto.Constants) do pConstCount = pConstCount + 1 end end
                 local pUpvalCount = 0
-                for _ in pairs(proto.Upvalues) do pUpvalCount = pUpvalCount + 1 end
+                if proto.Upvalues then for _ in pairs(proto.Upvalues) do pUpvalCount = pUpvalCount + 1 end end
                 table.insert(header, "     |     [" .. tostring(i) .. "] " .. proto.Name .. " (C:" .. tostring(pConstCount) .. " U:" .. tostring(pUpvalCount) .. ")")
-                
-                if pConstCount > 0 then
-                    table.insert(header, "     |         Constants:")
-                    for idx, val in pairs(proto.Constants) do
-                        local valStr = tostring(val)
-                        if type(val) == "string" then
-                            valStr = '"' .. string.sub(val, 1, 30) .. (string.len(val) > 30 and '..."' or '"')
-                        end
-                        table.insert(header, "     |           [" .. tostring(idx) .. "] = " .. valStr)
-                    end
-                end
-                
-                if pUpvalCount > 0 then
-                    table.insert(header, "     |         Upvalues:")
-                    for idx, val in pairs(proto.Upvalues) do
-                        local valStr = tostring(val)
-                        if type(val) == "string" then
-                            valStr = '"' .. string.sub(val, 1, 30) .. (string.len(val) > 30 and '..."' or '"')
-                        elseif type(val) == "function" then
-                            valStr = "(function)"
-                        elseif type(val) == "table" then
-                            valStr = "(table)"
-                        end
-                        table.insert(header, "     |           [" .. tostring(idx) .. "] = " .. valStr)
-                    end
-                end
             end
         end
         
@@ -633,11 +579,12 @@ function CodeViewerWindow:GenerateAnnotatedSource(source: string, functions: {Fu
         if funcsAtLine then
             for _, func in ipairs(funcsAtLine) do
                 local constCount = 0
-                for _ in pairs(func.Constants) do constCount = constCount + 1 end
+                if func.Constants then for _ in pairs(func.Constants) do constCount = constCount + 1 end end
                 local upvalCount = 0
-                for _ in pairs(func.Upvalues) do upvalCount = upvalCount + 1 end
+                if func.Upvalues then for _ in pairs(func.Upvalues) do upvalCount = upvalCount + 1 end end
+                local protoCount = func.Protos and #func.Protos or 0
                 
-                local annotation = "-- @FUNC[" .. func.Name .. "] C:" .. tostring(constCount) .. " U:" .. tostring(upvalCount) .. " P:" .. tostring(#func.Protos)
+                local annotation = "-- @FUNC[" .. func.Name .. "] C:" .. tostring(constCount) .. " U:" .. tostring(upvalCount) .. " P:" .. tostring(protoCount)
                 table.insert(annotatedLines, annotation)
             end
         end
@@ -671,9 +618,9 @@ function CodeViewerWindow:SetSource(source: string, scriptName: string?, funcInf
     local totalProtos = 0
     
     for _, func in ipairs(self.AllFunctions) do
-        for _ in pairs(func.Constants) do totalConsts = totalConsts + 1 end
-        for _ in pairs(func.Upvalues) do totalUpvals = totalUpvals + 1 end
-        totalProtos = totalProtos + #func.Protos
+        if func.Constants then for _ in pairs(func.Constants) do totalConsts = totalConsts + 1 end end
+        if func.Upvalues then for _ in pairs(func.Upvalues) do totalUpvals = totalUpvals + 1 end end
+        if func.Protos then totalProtos = totalProtos + #func.Protos end
     end
     
     local infoText = "Lines: " .. tostring(#self.Lines) .. " | Chars: " .. tostring(#annotatedSource)
@@ -779,15 +726,15 @@ local Serializer = {}
 Serializer.__index = Serializer
 
 Serializer.Cache = setmetatable({}, {__mode = "k"})
-Serializer.MaxDepth = 3
-Serializer.MaxTableSize = 50
+Serializer.MaxDepth = 2
+Serializer.MaxTableSize = 25
 Serializer.MaxStringLength = 100
 
 function Serializer.GetType(value: any): string
     local t = typeof(value)
     if t == "table" then
-        local mt = getmetatable(value)
-        if mt and rawget(mt, "__tostring") then
+        local success, mt = SafeCall(getmetatable, value)
+        if success and mt and rawget(mt, "__tostring") then
             return "custom_table"
         end
     end
@@ -807,7 +754,9 @@ function Serializer.GetDisplayType(value: any): string
         return "function"
     elseif t == "table" then
         local count = 0
-        for _ in pairs(value) do count = count + 1 end
+        pcall(function()
+            for _ in pairs(value) do count = count + 1 end
+        end)
         return "table[" .. tostring(count) .. "]"
     elseif t == "Instance" then
         local success, class = SafeCall(function() return value.ClassName end)
@@ -834,17 +783,19 @@ function Serializer.SerializeTable(tbl: {[any]: any}, depth: number?): string
     local parts = {}
     local count = 0
     
-    for k, v in pairs(tbl) do
-        if count >= Serializer.MaxTableSize then
-            table.insert(parts, "...")
-            break
+    pcall(function()
+        for k, v in pairs(tbl) do
+            if count >= Serializer.MaxTableSize then
+                table.insert(parts, "...")
+                break
+            end
+            
+            local keyStr = Serializer.Serialize(k, depth + 1)
+            local valStr = Serializer.Serialize(v, depth + 1)
+            table.insert(parts, "[" .. keyStr .. "]=" .. valStr)
+            count = count + 1
         end
-        
-        local keyStr = Serializer.Serialize(k, depth + 1)
-        local valStr = Serializer.Serialize(v, depth + 1)
-        table.insert(parts, "[" .. keyStr .. "]=" .. valStr)
-        count = count + 1
-    end
+    end)
     
     local result = "{" .. table.concat(parts, ", ") .. "}"
     Serializer.Cache[tbl] = result
@@ -894,19 +845,11 @@ function Serializer.Serialize(value: any, depth: number?): string
     elseif valueType == "table" then
         return Serializer.SerializeTable(value, depth)
     elseif valueType == "custom_table" then
-        local success, str = SafeCall(tostring, value)
-        if success then
-            return "(" .. str .. ")"
-        end
         return "(custom_table)"
     elseif valueType == "userdata" then
-        local success, str = SafeCall(tostring, value)
-        if success then
-            return "(userdata: " .. str .. ")"
-        end
         return "(userdata)"
     elseif valueType == "thread" then
-        return "(thread: " .. tostring(coroutine.status(value)) .. ")"
+        return "(thread)"
     elseif valueType == "Instance" then
         local success, path = SafeCall(function()
             return value:GetFullName()
@@ -915,22 +858,6 @@ function Serializer.Serialize(value: any, depth: number?): string
             return "(Instance: " .. path .. ")"
         end
         return "(Instance)"
-    elseif valueType == "Vector3" then
-        return string.format("Vector3(%g, %g, %g)", value.X, value.Y, value.Z)
-    elseif valueType == "Vector2" then
-        return string.format("Vector2(%g, %g)", value.X, value.Y)
-    elseif valueType == "CFrame" then
-        return string.format("CFrame(%g, %g, %g)", value.X, value.Y, value.Z)
-    elseif valueType == "Color3" then
-        return string.format("Color3(%g, %g, %g)", value.R, value.G, value.B)
-    elseif valueType == "UDim2" then
-        return string.format("UDim2(%g, %d, %g, %d)", value.X.Scale, value.X.Offset, value.Y.Scale, value.Y.Offset)
-    elseif valueType == "UDim" then
-        return string.format("UDim(%g, %d)", value.Scale, value.Offset)
-    elseif valueType == "Enum" then
-        return tostring(value)
-    elseif valueType == "EnumItem" then
-        return tostring(value)
     else
         return "(" .. valueType .. ")"
     end
@@ -962,26 +889,21 @@ function FunctionHasher.ComputeHash(func: (...any) -> ...any): string
     end)
     
     SafeCall(function()
-        local constants = debug.getconstants(func)
-        local constCount = 0
-        for _ in pairs(constants) do
-            constCount = constCount + 1
+        if debug.getconstants then
+            local constants = debug.getconstants(func)
+            local constCount = 0
+            if constants then for _ in pairs(constants) do constCount = constCount + 1 end end
+            table.insert(parts, "c" .. tostring(constCount))
         end
-        table.insert(parts, "c" .. tostring(constCount))
     end)
     
     SafeCall(function()
-        local upvalues = debug.getupvalues(func)
-        local upvalCount = 0
-        for _ in pairs(upvalues) do
-            upvalCount = upvalCount + 1
+        if debug.getupvalues then
+            local upvalues = debug.getupvalues(func)
+            local upvalCount = 0
+            if upvalues then for _ in pairs(upvalues) do upvalCount = upvalCount + 1 end end
+            table.insert(parts, "u" .. tostring(upvalCount))
         end
-        table.insert(parts, "u" .. tostring(upvalCount))
-    end)
-    
-    SafeCall(function()
-        local protos = debug.getprotos(func)
-        table.insert(parts, "p" .. tostring(#protos))
     end)
     
     return table.concat(parts, "_")
@@ -1020,11 +942,11 @@ function ScriptAnalyzer:AnalyzeProto(proto: (...any) -> ...any, index: number, p
     end)
     
     SafeCall(function()
-        data.Constants = debug.getconstants(proto)
+        if debug.getconstants then data.Constants = debug.getconstants(proto) or {} end
     end)
     
     SafeCall(function()
-        data.Upvalues = debug.getupvalues(proto)
+        if debug.getupvalues then data.Upvalues = debug.getupvalues(proto) or {} end
     end)
     
     return data
@@ -1058,18 +980,22 @@ function ScriptAnalyzer:AnalyzeFunction(func: (...any) -> ...any): FunctionData?
     end)
     
     SafeCall(function()
-        data.Constants = debug.getconstants(func)
+        if debug.getconstants then data.Constants = debug.getconstants(func) or {} end
     end)
     
     SafeCall(function()
-        data.Upvalues = debug.getupvalues(func)
+        if debug.getupvalues then data.Upvalues = debug.getupvalues(func) or {} end
     end)
     
     SafeCall(function()
-        local protos = debug.getprotos(func)
-        for i, proto in ipairs(protos) do
-            local protoData = self:AnalyzeProto(proto, i, data)
-            table.insert(data.Protos, protoData)
+        if debug.getprotos then
+            local protos = debug.getprotos(func)
+            if protos then
+                for i, proto in ipairs(protos) do
+                    local protoData = self:AnalyzeProto(proto, i, data)
+                    table.insert(data.Protos, protoData)
+                end
+            end
         end
     end)
     
@@ -1083,19 +1009,19 @@ end
 
 function ScriptAnalyzer:RefreshFunctionData(func: FunctionData)
     SafeCall(function()
-        func.Constants = debug.getconstants(func.Func)
+        if debug.getconstants then func.Constants = debug.getconstants(func.Func) or {} end
     end)
     
     SafeCall(function()
-        func.Upvalues = debug.getupvalues(func.Func)
+        if debug.getupvalues then func.Upvalues = debug.getupvalues(func.Func) or {} end
     end)
     
-    for _, proto in ipairs(func.Protos) do
+    for _, proto in ipairs(func.Protos or {}) do
         SafeCall(function()
-            proto.Constants = debug.getconstants(proto.Func)
+            if debug.getconstants then proto.Constants = debug.getconstants(proto.Func) or {} end
         end)
         SafeCall(function()
-            proto.Upvalues = debug.getupvalues(proto.Func)
+            if debug.getupvalues then proto.Upvalues = debug.getupvalues(proto.Func) or {} end
         end)
     end
 end
@@ -1103,12 +1029,12 @@ end
 function ScriptAnalyzer:GetScriptFunctions(scriptInstance: Instance): {FunctionData}
     local functions: {FunctionData} = {}
     
-    if not scriptInstance then
+    if not scriptInstance or not getgc then
         return functions
     end
     
     local scriptName = scriptInstance.Name
-    local batchSize = 1000
+    local batchSize = 250
     local processed = 0
     
     SafeCall(function()
@@ -1131,7 +1057,6 @@ function ScriptAnalyzer:GetScriptFunctions(scriptInstance: Instance): {FunctionD
             end
             
             processed = processed + 1
-            
             if processed % batchSize == 0 then
                 task.wait()
             end
@@ -1149,8 +1074,11 @@ function ScriptAnalyzer:FindDeletedScripts(): {ScriptData}
     local deletedScripts: {ScriptData} = {}
     local foundSources: {[string]: boolean} = {}
     
+    if not getgc then return deletedScripts end
+    
     SafeCall(function()
         local gcObjects = getgc(true)
+        local processed = 0
         
         for _, obj in ipairs(gcObjects) do
             if typeof(obj) == "function" then
@@ -1164,11 +1092,13 @@ function ScriptAnalyzer:FindDeletedScripts(): {ScriptData}
                     local isDeleted = true
                     
                     SafeCall(function()
-                        local scripts = getscripts()
-                        for _, script in ipairs(scripts) do
-                            if string.find(source, script.Name, 1, true) then
-                                isDeleted = false
-                                break
+                        if getscripts then
+                            local scripts = getscripts()
+                            for _, script in ipairs(scripts) do
+                                if string.find(source, script.Name, 1, true) then
+                                    isDeleted = false
+                                    break
+                                end
                             end
                         end
                     end)
@@ -1190,6 +1120,11 @@ function ScriptAnalyzer:FindDeletedScripts(): {ScriptData}
                     end
                 end
             end
+            
+            processed = processed + 1
+            if processed % 500 == 0 then
+                task.wait()
+            end
         end
     end)
     
@@ -1205,6 +1140,7 @@ function ScriptAnalyzer:ScanAllScripts(): {ScriptData}
     Serializer.ClearCache()
     
     SafeCall(function()
+        if not getscripts then return end
         local allScripts = getscripts()
         
         if allScripts and typeof(allScripts) == "table" then
@@ -1283,76 +1219,62 @@ function ScriptAnalyzer:DecompileScript(scriptInstance: Instance): string
         return "-- No script selected"
     end
     
-    local success, result = SafeCall(function()
+    if not decompile then
+        return "-- Executor decompile function not supported"
+    end
+    
+    local success, result = pcall(function()
         return decompile(scriptInstance)
     end)
     
-    if success and result then
-        return tostring(result)
+    if success and result and type(result) == "string" then
+        return result
     else
-        return "-- Decompilation failed\n-- Error: " .. tostring(result or "Unknown error")
+        return "-- Decompilation failed: " .. tostring(result or "Unknown error")
     end
 end
 
 function ScriptAnalyzer:SetConstant(func: (...any) -> ...any, index: number, value: any): (boolean, string?)
+    if not debug.setconstant then return false, "debug.setconstant not available" end
     local success, err = SafeCall(function()
         debug.setconstant(func, index, value)
     end)
-    
-    if success then
-        return true, nil
-    else
-        return false, tostring(err)
-    end
+    return success, tostring(err)
 end
 
 function ScriptAnalyzer:SetUpvalue(func: (...any) -> ...any, index: number, value: any): (boolean, string?)
+    if not debug.setupvalue then return false, "debug.setupvalue not available" end
     local success, err = SafeCall(function()
         debug.setupvalue(func, index, value)
     end)
-    
-    if success then
-        return true, nil
-    else
-        return false, tostring(err)
-    end
+    return success, tostring(err)
 end
 
 function ScriptAnalyzer:GetStack(level: number, index: number?): any
+    if not debug.getstack then return nil end
     local success, result = SafeCall(function()
         return debug.getstack(level, index)
     end)
-    
-    if success then
-        return result
-    end
-    return nil
+    return success and result or nil
 end
 
 function ScriptAnalyzer:SetStack(level: number, index: number, value: any): (boolean, string?)
+    if not debug.setstack then return false, "debug.setstack not available" end
     local success, err = SafeCall(function()
         debug.setstack(level, index, value)
     end)
-    
-    if success then
-        return true, nil
-    else
-        return false, tostring(err)
-    end
+    return success, tostring(err)
 end
 
 function ScriptAnalyzer:HookFunctionToNil(func: (...any) -> ...any): (boolean, string?, (...any) -> ...any?)
-    if not hookfunction then
-        return false, "hookfunction not available", nil
-    end
-    
-    if not clonefunction then
-        return false, "clonefunction not available", nil
+    if not hookfunction or not newcclosure then
+        return false, "hookfunction/newcclosure not available", nil
     end
     
     local success, result = SafeCall(function()
-        local cloned = clonefunction(func)
-        self.OriginalFunctions[func] = cloned
+        if clonefunction then
+            self.OriginalFunctions[func] = clonefunction(func)
+        end
         
         local original = hookfunction(func, newcclosure(function(...)
             return coroutine.yield(coroutine.running())
@@ -1372,35 +1294,29 @@ end
 function ScriptAnalyzer:RestoreFunction(func: (...any) -> ...any): (boolean, string?)
     local original = self.OriginalFunctions[func] or self.HookedFunctions[func]
     
-    if not original then
-        return false, "Function not hooked or original not found"
-    end
-    
     if restorefunction then
         local success, err = SafeCall(function()
             restorefunction(func)
         end)
-        
         if success then
             self.HookedFunctions[func] = nil
             self.OriginalFunctions[func] = nil
             return true, nil
-        else
-            return false, tostring(err)
         end
-    else
+    end
+
+    if original and hookfunction then
         local success, err = SafeCall(function()
             hookfunction(func, original)
         end)
-        
         if success then
             self.HookedFunctions[func] = nil
             self.OriginalFunctions[func] = nil
             return true, nil
-        else
-            return false, tostring(err)
         end
     end
+    
+    return false, "Failed to restore function"
 end
 
 function ScriptAnalyzer:SetProtoConstant(proto: ProtoData, index: number, value: any): (boolean, string?)
@@ -1414,24 +1330,17 @@ end
 function ScriptAnalyzer:GetFunctionStats(func: FunctionData): {[string]: number}
     local constCount = 0
     local upvalCount = 0
-    local protoCount = #func.Protos
+    local protoCount = func.Protos and #func.Protos or 0
     local totalProtoConsts = 0
     local totalProtoUpvals = 0
     
-    for _ in pairs(func.Constants) do
-        constCount = constCount + 1
-    end
+    if func.Constants then for _ in pairs(func.Constants) do constCount = constCount + 1 end end
+    if func.Upvalues then for _ in pairs(func.Upvalues) do upvalCount = upvalCount + 1 end end
     
-    for _ in pairs(func.Upvalues) do
-        upvalCount = upvalCount + 1
-    end
-    
-    for _, proto in ipairs(func.Protos) do
-        for _ in pairs(proto.Constants) do
-            totalProtoConsts = totalProtoConsts + 1
-        end
-        for _ in pairs(proto.Upvalues) do
-            totalProtoUpvals = totalProtoUpvals + 1
+    if func.Protos then
+        for _, proto in ipairs(func.Protos) do
+            if proto.Constants then for _ in pairs(proto.Constants) do totalProtoConsts = totalProtoConsts + 1 end end
+            if proto.Upvalues then for _ in pairs(proto.Upvalues) do totalProtoUpvals = totalProtoUpvals + 1 end end
         end
     end
     
@@ -1450,11 +1359,6 @@ function ScriptAnalyzer:ClearCache()
     Serializer.ClearCache()
 end
 
-local Config = {
-    RequiredFunctions = {"getgc", "decompile", "getscripts", "identifyexecutor", "hookfunction", "clonefunction"},
-    RequiredDebugFunctions = {"getconstants", "getupvalues", "getprotos", "setconstant", "setupvalue", "info", "getstack", "setstack"}
-}
-
 local Utils = {}
 
 function Utils.GetExecutorName(): string
@@ -1467,56 +1371,20 @@ function Utils.GetExecutorName(): string
     return "Unknown"
 end
 
-function Utils.CheckFunction(name: string): boolean
-    local env = getfenv()
-    if env[name] ~= nil then
-        return true
-    end
-    if getgenv and getgenv()[name] ~= nil then
-        return true
-    end
-    return false
-end
-
-function Utils.CheckDebugFunction(name: string): boolean
-    if debug and debug[name] ~= nil then
-        return true
-    end
-    return false
-end
-
-function Utils.CheckAllFunctions(): (boolean, {string})
-    local missing: {string} = {}
-    
-    for _, funcName in ipairs(Config.RequiredFunctions) do
-        if not Utils.CheckFunction(funcName) then
-            table.insert(missing, funcName)
-        end
-    end
-    
-    for _, funcName in ipairs(Config.RequiredDebugFunctions) do
-        if not Utils.CheckDebugFunction(funcName) then
-            table.insert(missing, "debug." .. funcName)
-        end
-    end
-    
-    return #missing == 0, missing
-end
-
 function Utils.TruncateText(text: any, maxLen: number): string
     local str = tostring(text)
-    
     if #str > maxLen then
         return string.sub(str, 1, maxLen - 3) .. "..."
     end
-    
     return str
 end
 
 function Utils.CountTable(tbl: {[any]: any}): number
     local count = 0
-    for _ in pairs(tbl) do
-        count = count + 1
+    if tbl then
+        for _ in pairs(tbl) do
+            count = count + 1
+        end
     end
     return count
 end
@@ -1924,12 +1792,12 @@ function UIController:CreateDumpAllTab()
 
     self.Paragraphs.DumpAllStatus = tab:AddParagraph({
         Title = "Bulk Decompiler",
-        Content = "Target folder: Delta/Workspace/Dumper/\nCheck F9 console for detailed logs."
+        Content = "Target folder: Dumper/\nSafe non-freezing mode active."
     })
 
     tab:AddButton({
         Title = "Decompile All Scripts & Save",
-        Description = "Safely dumps all scripts to Delta Workspace Dumper folder",
+        Description = "Safely dumps all scripts to workspace Dumper folder without crashing",
         Callback = function()
             if not writefile or not makefolder then
                 Fluent:Notify({Title = "Error", Content = "File system API (writefile/makefolder) not supported!", Duration = 3})
@@ -1941,12 +1809,10 @@ function UIController:CreateDumpAllTab()
                 return
             end
 
-            local targetDir = "Delta/Workspace/Dumper"
+            local targetDir = "Dumper"
             pcall(function()
                 if isfolder and not isfolder(targetDir) then
-                    makefolder("Delta")
-                    makefolder("Delta/Workspace")
-                    makefolder("Delta/Workspace/Dumper")
+                    makefolder(targetDir)
                 end
             end)
 
@@ -1955,70 +1821,54 @@ function UIController:CreateDumpAllTab()
                 local successCount = 0
                 local failCount = 0
 
-                print("[ScriptDumper Log] Initializing dump operation. Total scripts: " .. tostring(total))
-                Fluent:Notify({Title = "Dumper Started", Content = "Decompiling " .. tostring(total) .. " scripts safely...", Duration = 3})
+                Fluent:Notify({Title = "Dumper Started", Content = "Dumping " .. tostring(total) .. " scripts safely...", Duration = 3})
 
                 for i, scriptData in ipairs(self.Analyzer.Scripts) do
                     local currentName = tostring(scriptData.Name or "Unknown")
                     local truncatedName = Utils.TruncateText(currentName, 30)
 
-                    print(string.format("[ScriptDumper Log] [%d/%d] Processing: %s (Type: %s)", i, total, currentName, tostring(scriptData.Type)))
-
                     pcall(function()
                         self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nProcessing: " .. truncatedName)
                     end)
 
-                    if scriptData and scriptData.Instance then
-                        local safeName = currentName:gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
+                    if scriptData and scriptData.Instance and not scriptData.IsDeleted then
+                        -- Очищаем имя от невалидных символов ОС
+                        local safeName = currentName:gsub("[^%w%_%-]", "_")
+                        if #safeName > 50 then safeName = string.sub(safeName, 1, 50) end
+                        safeName = safeName .. "_" .. tostring(i) .. ".lua"
+                        
                         local filePath = targetDir .. "/" .. safeName
+                        local code = ""
+                        local ok = false
 
-                        local ok, code = false, ""
-                        local decompileThread = task.spawn(function()
-                            ok, code = pcall(function()
-                                return self.Analyzer:DecompileScript(scriptData.Instance)
-                            end)
+                        -- Безопасная декомпиляция в защищенном режиме
+                        ok, code = pcall(function()
+                            return self.Analyzer:DecompileScript(scriptData.Instance)
                         end)
 
-                        task.wait(0.05)
-
-                        if ok and code and type(code) == "string" and #code > 0 and not string.find(code, "Decompilation failed") then
+                        if ok and type(code) == "string" and #code > 0 and not string.find(code, "Decompilation failed") then
                             local written = pcall(function()
                                 writefile(filePath, code)
                             end)
 
                             if written then
                                 successCount = successCount + 1
-                                print(string.format("[ScriptDumper Log] [%d/%d] SUCCESS -> Saved to %s (%d chars)", i, total, filePath, #code))
                             else
-                                local backupWritten = pcall(function()
-                                    if not isfolder("Dumper") then makefolder("Dumper") end
-                                    writefile("Dumper/" .. safeName, code)
-                                end)
-
-                                if backupWritten then
-                                    successCount = successCount + 1
-                                    print(string.format("[ScriptDumper Log] [%d/%d] SUCCESS (Backup Dir) -> Dumper/%s", i, total, safeName))
-                                else
-                                    failCount = failCount + 1
-                                    warn(string.format("[ScriptDumper Log] [%d/%d] ERROR -> Failed to write file: %s", i, total, safeName))
-                                end
+                                failCount = failCount + 1
                             end
                         else
                             failCount = failCount + 1
-                            warn(string.format("[ScriptDumper Log] [%d/%d] FAILED -> Decompilation failed or returned empty string for: %s", i, total, currentName))
                         end
                     else
                         failCount = failCount + 1
-                        warn(string.format("[ScriptDumper Log] [%d/%d] SKIPPED -> Invalid instance or deleted script: %s", i, total, currentName))
                     end
 
+                    -- Обязательная задержка для предотвращения зависания и вылета игры
                     task.wait(0.05)
                 end
 
-                print(string.format("[ScriptDumper Log] FINISHED! Success: %d, Fail/Skipped: %d", successCount, failCount))
-
                 pcall(function()
-                    self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: " .. targetDir)
+                    self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nFolder: " .. targetDir)
                 end)
                 Fluent:Notify({Title = "Dump Complete!", Content = "Saved " .. tostring(successCount) .. " scripts to " .. targetDir, Duration = 5})
             end)
@@ -2154,20 +2004,22 @@ function UIController:OnScriptSelected(value: string)
             self.CurrentScript.Functions = {}
             
             SafeCall(function()
-                local gcObjects = getgc(true)
-                local scriptSource = string.gsub(self.CurrentScript.Name, " %[DELETED%]", "")
-                
-                for _, obj in ipairs(gcObjects) do
-                    if typeof(obj) == "function" then
-                        local source = ""
-                        SafeCall(function()
-                            source = debug.info(obj, "s") or ""
-                        end)
-                        
-                        if source == scriptSource then
-                            local funcData = self.Analyzer:AnalyzeFunction(obj)
-                            if funcData then
-                                table.insert(self.CurrentScript.Functions, funcData)
+                if getgc then
+                    local gcObjects = getgc(true)
+                    local scriptSource = string.gsub(self.CurrentScript.Name, " %[DELETED%]", "")
+                    
+                    for _, obj in ipairs(gcObjects) do
+                        if typeof(obj) == "function" then
+                            local source = ""
+                            SafeCall(function()
+                                source = debug.info(obj, "s") or ""
+                            end)
+                            
+                            if source == scriptSource then
+                                local funcData = self.Analyzer:AnalyzeFunction(obj)
+                                if funcData then
+                                    table.insert(self.CurrentScript.Functions, funcData)
+                                end
                             end
                         end
                     end
@@ -2226,7 +2078,6 @@ function UIController:OnFunctionSelected(value: string)
     self.Analyzer:RefreshFunctionData(self.CurrentFunction)
     
     local stats = self.Analyzer:GetFunctionStats(self.CurrentFunction)
-    
     local hookedStatus = self.CurrentFunction.IsHooked and " [HOOKED]" or ""
     
     self.Paragraphs.FunctionInfo:SetDesc(
@@ -2252,12 +2103,13 @@ function UIController:UpdateConstantsList()
     
     if self.CurrentFunction then
         self.Analyzer:RefreshFunctionData(self.CurrentFunction)
-        
-        for idx, val in pairs(self.CurrentFunction.Constants) do
-            local serialized = Serializer.SerializeWithType(val)
-            local displayName = "[" .. tostring(idx) .. "] (" .. serialized.DisplayType .. ") " .. Utils.TruncateText(serialized.Value, 40)
-            table.insert(constList, displayName)
-            self.ConstantMap[displayName] = {index = idx, value = val}
+        if self.CurrentFunction.Constants then
+            for idx, val in pairs(self.CurrentFunction.Constants) do
+                local serialized = Serializer.SerializeWithType(val)
+                local displayName = "[" .. tostring(idx) .. "] (" .. serialized.DisplayType .. ") " .. Utils.TruncateText(serialized.Value, 40)
+                table.insert(constList, displayName)
+                self.ConstantMap[displayName] = {index = idx, value = val}
+            end
         end
     end
     
@@ -2274,12 +2126,13 @@ function UIController:UpdateUpvaluesList()
     
     if self.CurrentFunction then
         self.Analyzer:RefreshFunctionData(self.CurrentFunction)
-        
-        for idx, val in pairs(self.CurrentFunction.Upvalues) do
-            local serialized = Serializer.SerializeWithType(val)
-            local displayName = "[" .. tostring(idx) .. "] (" .. serialized.DisplayType .. ") " .. Utils.TruncateText(serialized.Value, 40)
-            table.insert(upvalList, displayName)
-            self.UpvalueMap[displayName] = {index = idx, value = val}
+        if self.CurrentFunction.Upvalues then
+            for idx, val in pairs(self.CurrentFunction.Upvalues) do
+                local serialized = Serializer.SerializeWithType(val)
+                local displayName = "[" .. tostring(idx) .. "] (" .. serialized.DisplayType .. ") " .. Utils.TruncateText(serialized.Value, 40)
+                table.insert(upvalList, displayName)
+                self.UpvalueMap[displayName] = {index = idx, value = val}
+            end
         end
     end
     
@@ -2294,7 +2147,7 @@ function UIController:UpdateProtosList()
     local protoList = {}
     self.ProtoMap = {}
     
-    if self.CurrentFunction then
+    if self.CurrentFunction and self.CurrentFunction.Protos then
         for i, proto in ipairs(self.CurrentFunction.Protos) do
             local constCount = Utils.CountTable(proto.Constants)
             local upvalCount = Utils.CountTable(proto.Upvalues)
@@ -2317,27 +2170,29 @@ function UIController:RefreshStack()
     local stackList = {}
     self.StackMap = {}
     
-    SafeCall(function()
-        for level = 1, 5 do
-            local success, stack = SafeCall(function()
-                return debug.getstack(level)
-            end)
-            
-            if success and stack and typeof(stack) == "table" then
-                for idx, val in pairs(stack) do
-                    local serialized = Serializer.SerializeWithType(val)
-                    local displayName = "L" .. tostring(level) .. ":[" .. tostring(idx) .. "] (" .. serialized.DisplayType .. ") " .. Utils.TruncateText(serialized.Value, 35)
-                    table.insert(stackList, displayName)
-                    self.StackMap[displayName] = {
-                        Level = level,
-                        Index = idx,
-                        Value = val,
-                        Type = typeof(val)
-                    }
+    if debug.getstack then
+        SafeCall(function()
+            for level = 1, 5 do
+                local success, stack = SafeCall(function()
+                    return debug.getstack(level)
+                end)
+                
+                if success and stack and typeof(stack) == "table" then
+                    for idx, val in pairs(stack) do
+                        local serialized = Serializer.SerializeWithType(val)
+                        local displayName = "L" .. tostring(level) .. ":[" .. tostring(idx) .. "] (" .. serialized.DisplayType .. ") " .. Utils.TruncateText(serialized.Value, 35)
+                        table.insert(stackList, displayName)
+                        self.StackMap[displayName] = {
+                            Level = level,
+                            Index = idx,
+                            Value = val,
+                            Type = typeof(val)
+                        }
+                    end
                 end
             end
-        end
-    end)
+        end)
+    end
     
     if #stackList == 0 then
         table.insert(stackList, "No stack data")
@@ -2358,8 +2213,10 @@ function UIController:OnConstantSelected(value: string)
         
         local freshValue = nil
         SafeCall(function()
-            local consts = debug.getconstants(self.CurrentFunction.Func)
-            freshValue = consts[data.index]
+            if debug.getconstants then
+                local consts = debug.getconstants(self.CurrentFunction.Func)
+                freshValue = consts[data.index]
+            end
         end)
         
         local serialized = Serializer.SerializeWithType(freshValue or data.value)
@@ -2384,8 +2241,10 @@ function UIController:OnUpvalueSelected(value: string)
         
         local freshValue = nil
         SafeCall(function()
-            local upvals = debug.getupvalues(self.CurrentFunction.Func)
-            freshValue = upvals[data.index]
+            if debug.getupvalues then
+                local upvals = debug.getupvalues(self.CurrentFunction.Func)
+                freshValue = upvals[data.index]
+            end
         end)
         
         local serialized = Serializer.SerializeWithType(freshValue or data.value)
@@ -2433,10 +2292,10 @@ function UIController:OnProtoSelected(value: string)
     end
     
     SafeCall(function()
-        self.CurrentProto.Constants = debug.getconstants(self.CurrentProto.Func)
+        if debug.getconstants then self.CurrentProto.Constants = debug.getconstants(self.CurrentProto.Func) or {} end
     end)
     SafeCall(function()
-        self.CurrentProto.Upvalues = debug.getupvalues(self.CurrentProto.Func)
+        if debug.getupvalues then self.CurrentProto.Upvalues = debug.getupvalues(self.CurrentProto.Func) or {} end
     end)
     
     local constCount = Utils.CountTable(self.CurrentProto.Constants)
@@ -2495,8 +2354,10 @@ function UIController:OnProtoConstantSelected(value: string)
         
         local freshValue = nil
         SafeCall(function()
-            local consts = debug.getconstants(data.proto.Func)
-            freshValue = consts[data.index]
+            if debug.getconstants then
+                local consts = debug.getconstants(data.proto.Func)
+                freshValue = consts[data.index]
+            end
         end)
         
         local serialized = Serializer.SerializeWithType(freshValue or data.value)
@@ -2521,8 +2382,10 @@ function UIController:OnProtoUpvalueSelected(value: string)
         
         local freshValue = nil
         SafeCall(function()
-            local upvals = debug.getupvalues(data.proto.Func)
-            freshValue = upvals[data.index]
+            if debug.getupvalues then
+                local upvals = debug.getupvalues(data.proto.Func)
+                freshValue = upvals[data.index]
+            end
         end)
         
         local serialized = Serializer.SerializeWithType(freshValue or data.value)
@@ -2542,28 +2405,15 @@ function UIController:EditConstant(text: string)
     end
     
     local index, value, err = Utils.ParseEditInput(text, self.SelectedConstantIndex)
-    
     if err then
         Fluent:Notify({Title = "Error", Content = err, Duration = 2})
         return
     end
     
     local success, editErr = self.Analyzer:SetConstant(self.CurrentFunction.Func, index, value)
-    
     if success then
         self.CurrentFunction.Constants[index] = value
         self:UpdateConstantsList()
-        
-        if self.SelectedConstantIndex == index then
-            local serialized = Serializer.SerializeWithType(value)
-            self.Paragraphs.ConstantInfo:SetDesc(
-                "Index: " .. tostring(index) .. " (selected)" ..
-                "\nType: " .. serialized.Type ..
-                "\nDisplay Type: " .. serialized.DisplayType ..
-                "\nValue: " .. serialized.Value
-            )
-        end
-        
         Fluent:Notify({Title = "Success", Content = "Constant [" .. tostring(index) .. "] updated", Duration = 2})
     else
         Fluent:Notify({Title = "Error", Content = editErr or "Failed", Duration = 2})
@@ -2577,28 +2427,15 @@ function UIController:EditUpvalue(text: string)
     end
     
     local index, value, err = Utils.ParseEditInput(text, self.SelectedUpvalueIndex)
-    
     if err then
         Fluent:Notify({Title = "Error", Content = err, Duration = 2})
         return
     end
     
     local success, editErr = self.Analyzer:SetUpvalue(self.CurrentFunction.Func, index, value)
-    
     if success then
         self.CurrentFunction.Upvalues[index] = value
         self:UpdateUpvaluesList()
-        
-        if self.SelectedUpvalueIndex == index then
-            local serialized = Serializer.SerializeWithType(value)
-            self.Paragraphs.UpvalueInfo:SetDesc(
-                "Index: " .. tostring(index) .. " (selected)" ..
-                "\nType: " .. serialized.Type ..
-                "\nDisplay Type: " .. serialized.DisplayType ..
-                "\nValue: " .. serialized.Value
-            )
-        end
-        
         Fluent:Notify({Title = "Success", Content = "Upvalue [" .. tostring(index) .. "] updated", Duration = 2})
     else
         Fluent:Notify({Title = "Error", Content = editErr or "Failed", Duration = 2})
@@ -2652,14 +2489,12 @@ function UIController:EditProtoConstant(text: string)
     end
     
     local index, value, err = Utils.ParseEditInput(text, self.SelectedProtoConstantIndex)
-    
     if err then
         Fluent:Notify({Title = "Error", Content = err, Duration = 2})
         return
     end
     
     local success, editErr = self.Analyzer:SetProtoConstant(self.CurrentProto, index, value)
-    
     if success then
         self.CurrentProto.Constants[index] = value
         self:OnProtoSelected(self.Dropdowns.Proto:GetValue())
@@ -2676,14 +2511,12 @@ function UIController:EditProtoUpvalue(text: string)
     end
     
     local index, value, err = Utils.ParseEditInput(text, self.SelectedProtoUpvalueIndex)
-    
     if err then
         Fluent:Notify({Title = "Error", Content = err, Duration = 2})
         return
     end
     
     local success, editErr = self.Analyzer:SetProtoUpvalue(self.CurrentProto, index, value)
-    
     if success then
         self.CurrentProto.Upvalues[index] = value
         self:OnProtoSelected(self.Dropdowns.Proto:GetValue())
