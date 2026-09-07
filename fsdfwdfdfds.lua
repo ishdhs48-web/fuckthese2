@@ -1958,7 +1958,11 @@ function UIController:CreateDumpAllTab()
                 Fluent:Notify({Title = "Dumper Started", Content = "Decompiling " .. tostring(total) .. " scripts safely...", Duration = 3})
 
                 for i, scriptData in ipairs(self.Analyzer.Scripts) do
-                    self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nDecompiling: " .. tostring(scriptData.Name))
+                    -- Обновляем текст только каждый скрипт, обрезая длинные имена во избежание сбоев в UI
+                    local currentName = Utils.TruncateText(tostring(scriptData.Name or "Unknown"), 30)
+                    pcall(function()
+                        self.Paragraphs.DumpAllStatus:SetDesc("Progress: " .. tostring(i) .. "/" .. tostring(total) .. "\nProcessing: " .. currentName)
+                    end)
 
                     if scriptData and scriptData.Instance then
                         local safeName = tostring(scriptData.Name):gsub("[^%w%_%-]", "_") .. "_" .. tostring(i) .. ".lua"
@@ -1976,7 +1980,6 @@ function UIController:CreateDumpAllTab()
                             if written then
                                 successCount = successCount + 1
                             else
-                                -- Fallback save directly to root dumper folder if path resolution fails
                                 pcall(function()
                                     if not isfolder("Dumper") then makefolder("Dumper") end
                                     writefile("Dumper/" .. safeName, code)
@@ -1990,16 +1993,16 @@ function UIController:CreateDumpAllTab()
                         failCount = failCount + 1
                     end
 
-                    -- Увеличенная задержка предотвращает краш движка (Crash Protection)
-                    task.wait(0.2)
+                    task.wait(0.1)
 
-                    -- Очистка GC для освобождения оперативной памяти
                     if i % 5 == 0 then
                         collectgarbage("step", 100)
                     end
                 end
 
-                self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: " .. targetDir)
+                pcall(function()
+                    self.Paragraphs.DumpAllStatus:SetDesc("Finished!\nSuccess: " .. tostring(successCount) .. "\nFailed/Skipped: " .. tostring(failCount) .. "\nSaved in: " .. targetDir)
+                end)
                 Fluent:Notify({Title = "Dump Complete!", Content = "Saved " .. tostring(successCount) .. " scripts to " .. targetDir, Duration = 5})
             end)
         end
